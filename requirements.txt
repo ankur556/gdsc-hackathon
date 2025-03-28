@@ -1,8 +1,13 @@
+groq
+langchain-community
+python-dotenv
+beautifulsoup4
+selenium
+requests
+pandas
+huggingface-hub
+sentence-transformers
+langchain-text-splitters
 streamlit
-PyPDF2
-langchain
 faiss-cpu
-langchain-google-genai
-google-generativeai
-audio-recorder-streamlit # For voice input (optional, replace with streamlit-webrtc if needed)
-openai # If using Whisper API for transcription
+langchain
