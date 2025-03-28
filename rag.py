@@ -14,9 +14,112 @@ from selenium.webdriver.common.by import By
 import requests
 import pandas as pd
 from dotenv import load_dotenv
+import base64
+
 load_dotenv()
 
 st.set_page_config(page_title="Cricbot Pro 🏏", layout="centered")
+
+def get_base64_image(image_path):
+    with open(image_path, "rb") as img_file:
+        return base64.b64encode(img_file.read()).decode()
+
+
+bat_base64 = get_base64_image("bat.png")
+ball_base64 = get_base64_image("ball.png")
+
+
+st.markdown(f"""
+    <style>
+        @keyframes moveBat {{
+            0% {{ left: -100px; opacity: 0; }}
+            50% {{ left: 450px; opacity: 1; }}
+            60% {{ left: 450px; transform: rotate(0deg); }}
+            65% {{ left: 450px; transform: rotate(-20deg); }}
+            70% {{ left: 450px; transform: rotate(-40deg); }}
+            75% {{ left: 450px; transform: rotate(-20deg); }}
+            80% {{ left: 450px; transform: rotate(0deg); }}
+            100% {{ opacity: 0; }}
+        }}
+
+        @keyframes moveBall {{
+            0% {{ right: -100px; opacity: 0; transform: translateY(0); }}
+            40% {{ right: 450px; opacity: 1; transform: translateY(0px); }}
+            50% {{ right: 440px; opacity: 1; transform: translateY(0); }}
+            60% {{ right: 475px; opacity: 1; transform: translateY(0px); }}
+            65% {{ right: 470px; opacity: 1; transform: translateY(0); }}
+            70% {{ right: 470px; opacity: 1; transform: translateY(0); }}
+            75% {{ right: 350px; opacity: 1; transform: translateY(-100px); }}
+            80% {{ right: 300px; opacity: 1; transform: translateY(-150px); }}
+            90% {{ right: 200px; opacity: 1; transform: translateY(-200px); }}
+            95% {{ right: 150px; opacity: 1; transform: translateY(-250px); }}
+            100% {{ right: 50px; opacity: 0; transform: translateY(-280px); }}
+        }}
+
+        @keyframes blastEffect {{
+            0% {{ transform: scale(0); opacity: 0; }}
+            50% {{ transform: scale(1.5); opacity: 1; }}
+            100% {{ transform: scale(1); opacity: 1; }}
+        }}
+
+        .container {{
+            position: relative;
+            height: 50vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }}
+
+        .bat {{
+            transform: scale(1.2);
+            position: absolute;
+            left: -100px;
+            opacity: 0;
+            width: 100px;  /* Adjust the size */
+            height: auto;
+            animation: moveBat 2s ease-in-out forwards;
+        }}
+
+        .ball {{
+            position: absolute;
+            right: -100px;
+            opacity: 0;
+            width: 50px;  /* Adjust the size */
+            height: auto;
+            animation: moveBall 2s ease-in-out forwards;
+        }}
+
+        .blast {{
+            position: absolute;
+            font-size: 70px;
+            font-weight: bold;
+            opacity: 0;
+            animation: blastEffect 1s ease-in-out 2s forwards;
+        }}
+
+        .subtitle {{
+            position: absolute;
+            font-size: 20px;
+            font-weight: normal;
+            opacity: 0;
+            animation: blastEffect 1s ease-in-out 2.5s forwards;
+        }}
+
+    </style>
+
+    <div class="container">
+        <img src="data:image/png;base64,{bat_base64}" class="bat" />
+        <img src="data:image/png;base64,{ball_base64}" class="ball" />
+        <div class="blast">CricBot</div>
+    </div>
+""", unsafe_allow_html=True)
+
+st.markdown(
+    "<h3 style='text-align: center;'>Smashing Your Cricket Queries Like a Pro! 💥</h3>", 
+    unsafe_allow_html=True
+)
 
 # Set API keys
 api_key = os.getenv("GROQ_API_KEY")
