@@ -5,95 +5,136 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain.docstore.document import Document as LangchainDocument
-from docx import Document as DocxDocument
+from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
+import requests
+import pandas as pd
 from dotenv import load_dotenv
 load_dotenv()
 
-st.set_page_config(page_title="Chatbot", layout="centered")
+st.set_page_config(page_title="Cricbot Pro 🏏", layout="centered")
 
-# Set API key
+# Set API keys
 api_key = os.getenv("GROQ_API_KEY")
-if not api_key:
-    st.error("GROQ_API_KEY is not set! Please configure your environment variable.")
-    st.stop()
+scrapingbee_key = os.getenv("SCRAPINGBEE_API_KEY")
 
-# Initialize Groq Client
+# Initialize clients
 client = Groq(api_key=api_key)
-
-# Load and process the document
-file_path = "blank.docx"
-try:
-    doc = DocxDocument(file_path)
-    text = "\n".join([p.text for p in doc.paragraphs])
-    if not text.strip():
-        raise ValueError("The document is empty!")
-    docs = [LangchainDocument(page_content=text)]
-except Exception as e:
-    st.error(f"Error loading file: {e}")
-    st.stop()
-
-# Split document into chunks
-text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-all_splits = text_splitter.split_documents(docs)
-
-# Convert to embeddings and store in FAISS
 embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-db = FAISS.from_documents(all_splits, embeddings)
-db.save_local("faiss_index")
+text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
 
-# Initialize session state for conversation history
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
+# Configure headless browser for dynamic content
+chrome_options = Options()
+chrome_options.add_argument("--headless=new")
+driver = webdriver.Chrome(options=chrome_options)
 
-# Function for multi-step retrieval
-def multi_step_retrieval(query):
-    retrieved_docs = db.similarity_search(query, k=3)
-    context = "\n".join([doc.page_content for doc in retrieved_docs])
+def scrape_cricinfo(player_name):
+    """Scrape player data from ESPN Cricinfo using Selenium"""
+    try:
+        driver.get(f"https://www.espncricinfo.com/search?q={player_name}")
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CLASS_NAME, "ds-p-4"))
+        )
+        soup = BeautifulSoup(driver.page_source, 'html.parser')
+        
+        # Extract key player stats
+        stats = {
+            'batting_avg': soup.find('div', {'title': 'Batting average'}).text,
+            'runs': soup.find('div', {'title': 'Runs scored'}).text,
+            'wickets': soup.find('div', {'title': 'Wickets taken'}).text,
+            'recent_performance': [m.text for m in soup.select('.ds-text-compact-xs')[:5]]
+        }
+        return str(stats)
     
-    # If the context is too short, try expanding the search
-    if len(context) < 500:
-        additional_query = " ".join(query.split()[:5])  # Use first few words as a refined query
-        additional_docs = db.similarity_search(additional_query, k=3)
-        additional_context = "\n".join([doc.page_content for doc in additional_docs])
-        context += "\n" + additional_context
-    
-    return context
+    except Exception as e:
+        return f"Error scraping Cricinfo: {str(e)}"
 
-# Function to handle conversation-style chatbot response
-def chat_with_rag(query):
-    context = multi_step_retrieval(query)
-    
-    messages = [{"role": "system", "content": "You are a helpful chatbot using retrieved knowledge."}]
-    messages += st.session_state.chat_history  # Include past messages
-    messages.append({"role": "user", "content": f"User Query: {query}\n\nRelevant Context:\n{context}\n\nChatbot:"})
-    
-    completion = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=messages,
-        temperature=0.6,
-        max_tokens=500,
-        top_p=0.95,
-        stream=False,
-    )
-    
-    response = completion.choices[0].message.content
-    
-    # Store conversation history
-    st.session_state.chat_history.append({"role": "user", "content": query})
-    st.session_state.chat_history.append({"role": "assistant", "content": response})
-    
-    return response
+def scrape_howstat(query):
+    """Scrape structured data from HowStat using ScrapingBee"""
+    try:
+        response = requests.get(
+            "https://app.scrapingbee.com/api/v1/",
+            params={
+                'api_key': scrapingbee_key,
+                'url': f'http://www.howstat.com/cricket/Statistics/Players/{query}',
+                'extract_rules': {
+                    'batting_stats': 'table#battingGrid td',
+                    'bowling_stats': 'table#bowlingGrid td'
+                }
+            }
+        )
+        return response.json()
+    except Exception as e:
+        return f"Error scraping HowStat: {str(e)}"
 
+def update_knowledge_base(query):
+    """Dynamic web scraping and vector store update"""
+    try:
+        # Scrape multiple sources
+        cricinfo_data = scrape_cricinfo(query)
+        howstat_data = scrape_howstat(query)
+        
+        # Create documents
+        docs = [
+            LangchainDocument(page_content=f"Cricinfo Data: {cricinfo_data}"),
+            LangchainDocument(page_content=f"HowStat Data: {howstat_data}")
+        ]
+        
+        # Update vector store
+        splits = text_splitter.split_documents(docs)
+        global db
+        db = FAISS.from_documents(splits, embeddings)
+        db.save_local("faiss_index")
+        
+        return True
+    except Exception as e:
+        st.error(f"Knowledge update failed: {str(e)}")
+        return False
 
+def enhanced_retrieval(query):
+    """Enhanced retrieval with dynamic data fetching"""
+    try:
+        # First attempt with existing knowledge
+        retrieved_docs = db.similarity_search(query, k=3)
+        context = "\n".join([doc.page_content for doc in retrieved_docs])
+        
+        # If insufficient context, fetch new data
+        if len(context) < 500:
+            if update_knowledge_base(query):
+                retrieved_docs = db.similarity_search(query, k=3)
+                context = "\n".join([doc.page_content for doc in retrieved_docs])
+        
+        return context
+    except Exception as e:
+        return f"Retrieval error: {str(e)}"
 
+# Initialize vector store
+if not os.path.exists("faiss_index"):
+    db = FAISS.from_texts(["Initial cricket knowledge"], embeddings)
+else:
+    db = FAISS.load_local("faiss_index", embeddings, allow_dangerous_deserialization=True)
 
 # Streamlit UI
-st.title("Cricbot 🏏")
+st.title("Cricbot Pro 🏏")
+user_input = st.text_input("Ask about any player, match, or statistic:")
 
-# Text Input
-user_input = st.text_input("Ask something:")
 if user_input:
-    response = chat_with_rag(user_input)
-    st.write(response)
-    
-
+    with st.spinner("Fetching latest cricket data..."):
+        context = enhanced_retrieval(user_input)
+        
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{
+                "role": "user",
+                "content": f"Cricket Question: {user_input}\n\nContext: {context}"
+            }],
+            temperature=0.7,
+            max_tokens=500
+        )
+        
+        st.write(response.choices[0].message.content)
+        st.success("Data sources: ESPN Cricinfo & HowStat")
